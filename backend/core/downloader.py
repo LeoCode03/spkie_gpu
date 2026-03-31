@@ -132,7 +132,7 @@ async def download_audio(
     _cookies_path = Path(__file__).parent.parent.parent / "cookies.txt"
 
     ydl_opts = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "outtmpl": output_template,
         "noplaylist": True,
         "ratelimit": 500 * 1024,  # 500 KB/s
