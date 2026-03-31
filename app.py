@@ -36,6 +36,8 @@ for _key, _default in [
     ("running", False),
     ("last_error", None),
     ("last_error_exc", None),
+    ("skip_download", False),
+    ("url_to_analyze", ""),
 ]:
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -63,19 +65,23 @@ with st.sidebar:
         )
         if _selected != "— ingresar URL —":
             url_input = _file_options[_selected]
-            settings.SKIP_DOWNLOAD = True
+            st.session_state.skip_download = True
+            st.session_state.url_to_analyze = url_input
             st.caption(f"✅ Usando `{_selected}{[f for f in _local_files if f.stem == _selected][0].suffix}`")
         else:
             url_input = st.text_input(
                 "URL de YouTube",
                 placeholder="https://www.youtube.com/watch?v=...",
             )
-            settings.SKIP_DOWNLOAD = False
+            st.session_state.skip_download = False
+            st.session_state.url_to_analyze = url_input
     else:
         url_input = st.text_input(
             "URL de YouTube",
             placeholder="https://www.youtube.com/watch?v=...",
         )
+        st.session_state.skip_download = False
+        st.session_state.url_to_analyze = url_input
 
     dry_run = st.checkbox(
         "Modo dry-run",
@@ -210,7 +216,9 @@ async def _pipeline(url: str, skip: bool, status, progress_bar) -> PipelineResul
 # ─── Ejecución ────────────────────────────────────────────────────────────────
 
 if analyze_btn:
-    if not url_input.strip():
+    _url = st.session_state.url_to_analyze.strip() or url_input.strip()
+    _skip = st.session_state.skip_download or dry_run
+    if not _url:
         st.warning("Ingresa una URL de YouTube antes de analizar.")
     else:
         st.session_state.running = True
@@ -220,7 +228,7 @@ if analyze_btn:
         with st.status("Analizando video...", expanded=True) as status:
             try:
                 res = asyncio.run(
-                    _pipeline(url_input.strip(), dry_run, status, progress_bar)
+                    _pipeline(_url, _skip, status, progress_bar)
                 )
                 st.session_state.result = res
                 st.session_state.timings = list(res.timing_summary.items())
