@@ -111,15 +111,12 @@ async def download_audio(
 
     # Modo dry-run: devolver archivo existente sin descargar
     if settings.SKIP_DOWNLOAD:
-        cached = output_dir / f"{video_id}.m4a"
-        if cached.exists():
-            return cached, video_db_id
-        # Intentar también .mp3 como fallback
-        cached_mp3 = output_dir / f"{video_id}.mp3"
-        if cached_mp3.exists():
-            return cached_mp3, video_db_id
+        for ext in ("m4a", "mp3", "webm", "opus"):
+            cached = output_dir / f"{video_id}.{ext}"
+            if cached.exists():
+                return cached, video_db_id
         raise FileNotFoundError(
-            f"SKIP_DOWNLOAD=true pero no se encontró {cached} ni {cached_mp3}.\n"
+            f"SKIP_DOWNLOAD=true pero no se encontró ningún audio para {video_id} en {output_dir}.\n"
             "Descarga el audio primero con SKIP_DOWNLOAD=false."
         )
 
