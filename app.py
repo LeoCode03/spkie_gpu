@@ -45,10 +45,38 @@ for _key, _default in [
 
 with st.sidebar:
     st.title("⚙️ Configuración")
-    url_input = st.text_input(
-        "URL de YouTube",
-        placeholder="https://www.youtube.com/watch?v=...",
-    )
+
+    # Detectar audios ya descargados en downloads/
+    _downloads_dir = settings.DOWNLOADS_DIR
+    _audio_exts = (".m4a", ".mp3", ".webm", ".opus")
+    _local_files = sorted(
+        f for f in _downloads_dir.iterdir()
+        if f.suffix in _audio_exts
+    ) if _downloads_dir.exists() else []
+
+    if _local_files:
+        st.info(f"📂 {len(_local_files)} audio(s) en downloads/")
+        _file_options = {f.stem: f"https://www.youtube.com/watch?v={f.stem}" for f in _local_files}
+        _selected = st.selectbox(
+            "Usar audio local",
+            options=["— ingresar URL —"] + list(_file_options.keys()),
+        )
+        if _selected != "— ingresar URL —":
+            url_input = _file_options[_selected]
+            settings.SKIP_DOWNLOAD = True
+            st.caption(f"✅ Usando `{_selected}{[f for f in _local_files if f.stem == _selected][0].suffix}`")
+        else:
+            url_input = st.text_input(
+                "URL de YouTube",
+                placeholder="https://www.youtube.com/watch?v=...",
+            )
+            settings.SKIP_DOWNLOAD = False
+    else:
+        url_input = st.text_input(
+            "URL de YouTube",
+            placeholder="https://www.youtube.com/watch?v=...",
+        )
+
     dry_run = st.checkbox(
         "Modo dry-run",
         help="Omite descarga y transcripción. Requiere audio ya descargado y transcripción en BD.",
