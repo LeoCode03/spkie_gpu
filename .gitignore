@@ -1,0 +1,10 @@
+venv/
+downloads/*.m4a
+downloads/*.mp3
+downloads/*.wav
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.env
+.DS_Store
