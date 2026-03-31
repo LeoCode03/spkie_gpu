@@ -77,7 +77,7 @@ async def _ollama_chat(
     temperature: float = 0.1,
 ) -> str:
     """Llamada al endpoint /api/chat de Ollama. Retorna el content del mensaje."""
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         response = await client.post(
             f"{settings.OLLAMA_BASE_URL}/api/chat",
             json={
@@ -112,7 +112,7 @@ class LLMAnalyzer:
         timer = PhaseTimer()
         timer.start("analisis_transcripcion")
 
-        chunks = _chunk_transcript(transcript, max_words=3000)
+        chunks = _chunk_transcript(transcript, max_words=1500)
         total_words = len(transcript.split())
 
         print(f"[analyzer] Transcripción: {total_words} palabras en {len(chunks)} chunk(s)")
