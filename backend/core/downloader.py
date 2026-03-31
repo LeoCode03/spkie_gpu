@@ -128,6 +128,9 @@ async def download_audio(
 
     output_template = str(output_dir / f"{video_id}.%(ext)s")
 
+    # Buscar cookies.txt en la raíz del proyecto (necesario en servidores cloud)
+    _cookies_path = Path(__file__).parent.parent.parent / "cookies.txt"
+
     ydl_opts = {
         "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": output_template,
@@ -139,6 +142,10 @@ async def download_audio(
         "retries": 3,
         "http_chunk_size": 1024 * 1024,
     }
+
+    if _cookies_path.exists():
+        ydl_opts["cookiefile"] = str(_cookies_path)
+        print(f"[downloader] Usando cookies desde {_cookies_path}")
 
     duration_seconds: Optional[int] = None
 
