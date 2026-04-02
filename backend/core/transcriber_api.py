@@ -1,7 +1,13 @@
 """
 backend/core/transcriber_api.py — rama api_transcript
 Obtiene la transcripción generada por YouTube sin descargar audio ni usar Whisper.
-Usa youtube-transcript-api (pip install youtube-transcript-api).
+Usa youtube-transcript-api >= 1.0 (pip install youtube-transcript-api).
+
+Cambios de API vs versiones anteriores:
+- YouTubeTranscriptApi ahora se instancia: YouTubeTranscriptApi()
+- .list_transcripts() → .list()
+- .fetch() devuelve FetchedTranscript (iterable de snippets, no lista de dicts)
+- Los snippets tienen atributo .text en lugar de clave "text"
 """
 from __future__ import annotations
 
@@ -9,11 +15,7 @@ import asyncio
 from typing import Optional
 
 import psycopg
-from youtube_transcript_api import (
-    YouTubeTranscriptApi,
-    NoTranscriptFound,
-    TranscriptsDisabled,
-)
+from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
 
 from backend.core.timer import PhaseTimer
 
@@ -62,13 +64,13 @@ async def fetch_transcript(
     timer.start("transcripcion_api")
 
     # La API es síncrona — ejecutar en thread pool para no bloquear el event loop
-    transcript_data, language = await asyncio.to_thread(_fetch_sync, youtube_id)
+    fetched, language = await asyncio.to_thread(_fetch_sync, youtube_id)
 
-    # Unir fragmentos en texto plano
+    # FetchedTranscript es iterable de snippets con atributo .text
     text = " ".join(
-        entry["text"].strip()
-        for entry in transcript_data
-        if entry.get("text", "").strip()
+        snippet.text.strip()
+        for snippet in fetched
+        if snippet.text.strip()
     )
 
     duracion = timer.stop()
@@ -97,12 +99,14 @@ async def fetch_transcript(
 
 # ─── Lógica síncrona ──────────────────────────────────────────────────────────
 
-def _fetch_sync(youtube_id: str) -> tuple[list[dict], str]:
+def _fetch_sync(youtube_id: str):
     """
-    Obtiene los datos de transcripción de forma síncrona.
+    Obtiene los datos de transcripción de forma síncrona (v1.x API).
     Prioridad: manual ES → manual EN → auto ES → auto EN → cualquier idioma.
+    Devuelve (FetchedTranscript, language_code).
     """
-    transcript_list = YouTubeTranscriptApi.list_transcripts(youtube_id)
+    api = YouTubeTranscriptApi()
+    transcript_list = api.list(youtube_id)
 
     # 1. Transcripción manual (más precisa)
     for lang in ("es", "en"):
