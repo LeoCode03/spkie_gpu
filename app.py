@@ -36,7 +36,6 @@ for _key, _default in [
     ("running", False),
     ("last_error", None),
     ("last_error_exc", None),
-    ("skip_download", False),
     ("url_to_analyze", ""),
 ]:
     if _key not in st.session_state:
@@ -48,45 +47,13 @@ for _key, _default in [
 with st.sidebar:
     st.title("⚙️ Configuración")
 
-    # Detectar audios ya descargados en downloads/
-    _downloads_dir = settings.DOWNLOADS_DIR
-    _audio_exts = (".m4a", ".mp3", ".webm", ".opus")
-    _local_files = sorted(
-        f for f in _downloads_dir.iterdir()
-        if f.suffix in _audio_exts
-    ) if _downloads_dir.exists() else []
-
-    if _local_files:
-        st.info(f"📂 {len(_local_files)} audio(s) en downloads/")
-        _file_options = {f.stem: f"https://www.youtube.com/watch?v={f.stem}" for f in _local_files}
-        _selected = st.selectbox(
-            "Usar audio local",
-            options=["— ingresar URL —"] + list(_file_options.keys()),
-        )
-        if _selected != "— ingresar URL —":
-            url_input = _file_options[_selected]
-            st.session_state.skip_download = True
-            st.session_state.url_to_analyze = url_input
-            st.caption(f"✅ Usando `{_selected}{[f for f in _local_files if f.stem == _selected][0].suffix}`")
-        else:
-            url_input = st.text_input(
-                "URL de YouTube",
-                placeholder="https://www.youtube.com/watch?v=...",
-            )
-            st.session_state.skip_download = False
-            st.session_state.url_to_analyze = url_input
-    else:
-        url_input = st.text_input(
-            "URL de YouTube",
-            placeholder="https://www.youtube.com/watch?v=...",
-        )
-        st.session_state.skip_download = False
-        st.session_state.url_to_analyze = url_input
-
-    dry_run = st.checkbox(
-        "Modo dry-run",
-        help="Omite descarga y transcripción. Requiere audio ya descargado y transcripción en BD.",
+    url_input = st.text_input(
+        "URL de YouTube",
+        placeholder="https://www.youtube.com/watch?v=...",
+        help="Pega aquí la URL del video. Se usarán los subtítulos generados por YouTube.",
     )
+    st.session_state.url_to_analyze = url_input
+
     st.divider()
 
     # Badge de entorno
@@ -95,7 +62,7 @@ with st.sidebar:
         st.success(f"🖥️ Entorno: **{env}**")
     else:
         st.info(f"☁️ Entorno: **{env}**")
-    st.caption(f"Whisper: `{settings.WHISPER_MODEL}` · LLM: `{settings.OLLAMA_MODEL}`")
+    st.caption(f"LLM: `{settings.OLLAMA_MODEL}`")
 
     # Info del video (después del análisis)
     res = st.session_state.result
@@ -117,7 +84,7 @@ with st.sidebar:
 # ─── Header ──────────────────────────────────────────────────────────────────
 
 st.title("🎬 Spike GPU — Analizador de Video YouTube")
-st.caption("Descarga · Transcribe · Analiza · Genera guion + prompts de imagen y video")
+st.caption("Transcripción vía YouTube API · Analiza · Genera guion + prompts de imagen y video")
 st.divider()
 
 # ─── Botón principal ─────────────────────────────────────────────────────────
@@ -182,11 +149,8 @@ _PHASE_NOTES: dict[str, str] = {
 }
 
 
-async def _pipeline(url: str, skip: bool, status, progress_bar) -> PipelineResult:
+async def _pipeline(url: str, status, progress_bar) -> PipelineResult:
     """Wrapper sobre VideoPipeline con progreso real en Streamlit."""
-    from backend.config import settings as _s
-    _s.SKIP_DOWNLOAD = skip
-
     from backend.pipeline import PHASE_LABELS, TOTAL_PHASES
 
     def on_phase_start(key: str, num: int, total: int) -> None:
@@ -214,7 +178,6 @@ async def _pipeline(url: str, skip: bool, status, progress_bar) -> PipelineResul
 
 if analyze_btn:
     _url = st.session_state.url_to_analyze.strip() or url_input.strip()
-    _skip = st.session_state.skip_download or dry_run
     if not _url:
         st.warning("Ingresa una URL de YouTube antes de analizar.")
     else:
@@ -225,7 +188,7 @@ if analyze_btn:
         with st.status("Analizando video...", expanded=True) as status:
             try:
                 res = asyncio.run(
-                    _pipeline(_url, _skip, status, progress_bar)
+                    _pipeline(_url, status, progress_bar)
                 )
                 st.session_state.result = res
                 st.session_state.timings = list(res.timing_summary.items())
