@@ -5,33 +5,31 @@ Orquestador central del pipeline de análisis de video YouTube.
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import Callable
 
-import psycopg
 from pydantic import BaseModel
 
 
 # ─── Metadatos de fases ───────────────────────────────────────────────────────
 
 PHASE_LABELS: dict[str, str] = {
-    "descarga_audio":           "⬇️ Descargando audio",
-    "metadata_youtube":         "📊 Metadata YouTube",
-    "transcripcion":            "🎤 Transcripción Whisper",
-    "analisis_llm":             "🧠 Análisis LLM",
-    "sentimiento_comentarios":  "💬 Sentimiento comentarios",
-    "generacion_guion":         "✍️ Generación de guion",
-    "prompts_imagen":           "🖼️ Prompts de imagen",
-    "prompts_video":            "🎬 Prompts de video",
-    "persistencia":             "💾 Guardando en BD",
+    "registro_video":            "📝 Registrando video",
+    "metadata_youtube":          "📊 Metadata YouTube",
+    "transcripcion_api":         "📄 Transcripción YouTube API",
+    "analisis_llm":              "🧠 Análisis LLM",
+    "sentimiento_comentarios":   "💬 Sentimiento comentarios",
+    "generacion_guion":          "✍️ Generación de guion",
+    "prompts_imagen":            "🖼️ Prompts de imagen",
+    "prompts_video":             "🎬 Prompts de video",
+    "persistencia":              "💾 Guardando en BD",
 }
 
 _PHASE_ORDER = list(PHASE_LABELS.keys())
 TOTAL_PHASES = len(_PHASE_ORDER)
 
 from backend.config import settings
-from backend.core.downloader import download_audio, extract_video_id
-from backend.core.transcriber import transcribe
+from backend.core.downloader import extract_video_id, register_video
+from backend.core.transcriber_api import fetch_transcript
 from backend.database.client import close_db, get_connection, init_db
 from backend.services.analyzer import LLMAnalyzer
 from backend.services.generator import ContentGenerator
@@ -107,14 +105,10 @@ class VideoPipeline:
         await init_db()
         try:
             async with get_connection() as conn:
-                # 1 · Descarga de audio ────────────────────────────────────────
-                t0 = _start("descarga_audio")
-                audio_path, video_db_id = await download_audio(
-                    url,
-                    output_dir=settings.DOWNLOADS_DIR,
-                    db_conn=conn,
-                )
-                _done("descarga_audio", t0)
+                # 1 · Registro del video en BD ────────────────────────────────
+                t0 = _start("registro_video")
+                video_db_id = await register_video(conn, youtube_id, url)
+                _done("registro_video", t0)
 
                 # 2 · Metadata de YouTube (enrich actualiza la fila en BD) ─────
                 t0 = _start("metadata_youtube")
@@ -125,10 +119,10 @@ class VideoPipeline:
                 )
                 _done("metadata_youtube", t0)
 
-                # 3 · Transcripción (usa cache si ya existe en BD) ─────────────
-                t0 = _start("transcripcion")
-                transcript = await transcribe(audio_path, video_db_id, conn)
-                _done("transcripcion", t0)
+                # 3 · Transcripción vía YouTube API (usa cache si ya existe) ──
+                t0 = _start("transcripcion_api")
+                transcript = await fetch_transcript(youtube_id, video_db_id, conn)
+                _done("transcripcion_api", t0)
 
                 # 4 · Análisis de transcripción (2 pasadas internas) ───────────
                 t0 = _start("analisis_llm")
@@ -198,8 +192,8 @@ class VideoPipeline:
         """
         # Etiquetas legibles para cada fase (en el orden canónico)
         phase_labels: list[tuple[str, str]] = [
-            ("descarga_audio",           "Descarga audio"),
-            ("transcripcion",            "Transcripción"),
+            ("registro_video",           "Registro video"),
+            ("transcripcion_api",        "Transcripción API"),
             ("metadata_youtube",         "Metadata YouTube"),
             ("analisis_llm",             "Análisis LLM"),
             ("sentimiento_comentarios",  "Sentimiento comentarios"),

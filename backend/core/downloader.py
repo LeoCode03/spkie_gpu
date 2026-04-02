@@ -1,24 +1,18 @@
+"""
+backend/core/downloader.py — rama api_transcript
+Conserva extract_video_id() para parsear URLs y register_video() para insertar
+el video en BD. La descarga de audio y Whisper fueron eliminados en esta rama.
+"""
 import re
-from pathlib import Path
-from typing import Optional
-
-import yt_dlp
 import psycopg
 
 from backend.config import settings
-from backend.core.timer import PhaseTimer
 
 
 # ─── Excepciones ─────────────────────────────────────────────────────────────
 
-class VideoUnavailableError(Exception):
-    """Video privado, eliminado o con restricción de edad."""
-
 class InvalidURLError(Exception):
     """URL inválida o no corresponde a un video de YouTube."""
-
-class DownloadNetworkError(Exception):
-    """Error de red durante la descarga (reintentable)."""
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -46,12 +40,15 @@ def extract_video_id(url: str) -> str:
     return match.group(1)
 
 
-async def _upsert_video(
+async def register_video(
     conn: psycopg.AsyncConnection,
     video_id: str,
     url: str,
 ) -> int:
-    """Inserta o devuelve el id de BD del video."""
+    """
+    Registra el video en BD (upsert) y devuelve el video_db_id.
+    Reemplaza download_audio() en la rama api_transcript — sin descarga de audio.
+    """
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id FROM videos WHERE video_id = %s",
@@ -71,119 +68,3 @@ async def _upsert_video(
         )
         row = await cur.fetchone()
         return row[0]
-
-
-async def _update_duration(
-    conn: psycopg.AsyncConnection,
-    video_db_id: int,
-    duration_seconds: Optional[int],
-) -> None:
-    await conn.execute(
-        "UPDATE videos SET duration_seconds = %s WHERE id = %s",
-        (duration_seconds, video_db_id),
-    )
-
-
-# ─── Download ────────────────────────────────────────────────────────────────
-
-async def download_audio(
-    url: str,
-    output_dir: Path,
-    db_conn: Optional[psycopg.AsyncConnection],
-) -> tuple[Path, int]:
-    """
-    Descarga solo el audio de un video de YouTube.
-
-    Retorna:
-        (ruta_archivo_audio, video_db_id)
-
-    Si settings.SKIP_DOWNLOAD es True, busca el archivo en output_dir y lo
-    retorna directamente sin descargar. Útil para desarrollo cuando el audio
-    ya fue descargado en una ejecución anterior.
-    """
-    video_id = extract_video_id(url)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Registrar en BD al inicio (si hay conexión disponible)
-    video_db_id: int = -1
-    if db_conn:
-        video_db_id = await _upsert_video(db_conn, video_id, url)
-
-    # Modo dry-run: devolver archivo existente sin descargar
-    if settings.SKIP_DOWNLOAD:
-        for ext in ("m4a", "mp3", "webm", "opus"):
-            cached = output_dir / f"{video_id}.{ext}"
-            if cached.exists():
-                return cached, video_db_id
-        raise FileNotFoundError(
-            f"SKIP_DOWNLOAD=true pero no se encontró ningún audio para {video_id} en {output_dir}.\n"
-            "Descarga el audio primero con SKIP_DOWNLOAD=false."
-        )
-
-    timer = PhaseTimer()
-    timer.start("descarga")
-
-    output_template = str(output_dir / f"{video_id}.%(ext)s")
-
-    # Buscar cookies.txt en la raíz del proyecto (necesario en servidores cloud)
-    _cookies_path = Path(__file__).parent.parent.parent / "cookies.txt"
-
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": output_template,
-        "noplaylist": True,
-        "ratelimit": 500 * 1024,  # 500 KB/s
-        "quiet": True,
-        "no_warnings": True,
-        "ignoreerrors": False,
-        "retries": 3,
-        "http_chunk_size": 1024 * 1024,
-    }
-
-    if _cookies_path.exists():
-        ydl_opts["cookiefile"] = str(_cookies_path)
-        print(f"[downloader] Usando cookies desde {_cookies_path}")
-
-    duration_seconds: Optional[int] = None
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if info:
-                duration_seconds = info.get("duration")
-
-    except yt_dlp.utils.DownloadError as exc:
-        msg = str(exc).lower()
-        if any(k in msg for k in ("private", "unavailable", "removed", "deleted", "sign in")):
-            raise VideoUnavailableError(
-                f"El video {video_id} no está disponible (privado, eliminado o requiere login)."
-            ) from exc
-        if any(k in msg for k in ("network", "connection", "timeout", "http error")):
-            raise DownloadNetworkError(
-                f"Error de red al descargar {video_id}: {exc}"
-            ) from exc
-        raise DownloadNetworkError(f"Error de yt-dlp: {exc}") from exc
-
-    duracion = timer.stop()
-
-    # Buscar el archivo descargado (la extensión puede variar)
-    audio_path: Optional[Path] = None
-    for ext in ("m4a", "mp3", "opus", "webm"):
-        candidate = output_dir / f"{video_id}.{ext}"
-        if candidate.exists():
-            audio_path = candidate
-            break
-
-    if audio_path is None:
-        raise DownloadNetworkError(
-            f"yt-dlp reportó éxito pero no se encontró el archivo de audio para {video_id}."
-        )
-
-    # Actualizar duración y guardar tiempo en BD
-    if db_conn:
-        if duration_seconds:
-            await _update_duration(db_conn, video_db_id, duration_seconds)
-        await timer.save_to_db(video_db_id, db_conn)
-
-    print(f"[downloader] {video_id} descargado en {duracion:.1f}s → {audio_path.name}")
-    return audio_path, video_db_id
