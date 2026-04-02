@@ -136,23 +136,20 @@ with col_btn:
 
 def _show_error(exc: Exception) -> None:
     """Notificación de error con mensaje amigable según el tipo de excepción."""
-    from backend.core.downloader import (
-        DownloadNetworkError,
-        InvalidURLError,
-        VideoUnavailableError,
-    )
+    from backend.core.downloader import InvalidURLError
+    from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled
 
-    if isinstance(exc, VideoUnavailableError):
-        st.error(
-            "❌ **Video no disponible** — El video es privado, fue eliminado "
-            "o está geo-restringido."
-        )
-    elif isinstance(exc, InvalidURLError):
+    if isinstance(exc, InvalidURLError):
         st.error("❌ **URL inválida** — Verifica que sea una URL de YouTube válida.")
-    elif isinstance(exc, DownloadNetworkError):
+    elif isinstance(exc, TranscriptsDisabled):
         st.error(
-            "❌ **Error de red** — No se pudo descargar el audio. "
-            "Revisa tu conexión a internet."
+            "❌ **Subtítulos desactivados** — Este video no tiene subtítulos "
+            "ni transcripciones generadas por YouTube."
+        )
+    elif isinstance(exc, NoTranscriptFound):
+        st.error(
+            "❌ **Sin transcripción disponible** — YouTube no generó subtítulos "
+            "para este video. Prueba con otro."
         )
     elif isinstance(exc, asyncio.TimeoutError):
         st.error(
@@ -180,7 +177,7 @@ def _show_error(exc: Exception) -> None:
 
 # Nota extra por fase para fases que pueden tardar mucho
 _PHASE_NOTES: dict[str, str] = {
-    "transcripcion": " *(puede tardar varios minutos en CPU)*",
+    "transcripcion_api": " *(consultando subtítulos de YouTube)*",
     "analisis_llm":  " *(procesando chunks de texto)*",
 }
 
