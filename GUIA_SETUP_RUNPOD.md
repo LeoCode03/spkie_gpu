@@ -94,7 +94,7 @@ sudo -u postgres psql spike_gpu -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA
 ```bash
 cat > /workspace/spkie_gpu/backend/.env << 'EOF'
 DATABASE_URL=postgresql://spike_user:spike_pass@localhost:5432/spike_gpu
-YOUTUBE_API_KEY=AIzaSyDskp5HMQFI7D-LfpuYpx0ijB-Mw-nBRb4
+YOUTUBE_API_KEY=API_KEY
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3.5:9b
 WHISPER_MODEL=large-v3
